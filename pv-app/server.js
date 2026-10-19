@@ -56,15 +56,51 @@ async function getSettings() {
   if (error) throw error;
   return { seed: (data && data.seed) || '', reset: !data || data.reset_monthly !== false };
 }
-async function lastPV() {
-  const { data, error } = await db.from('vouchers').select('pv_no').order('created_at', { ascending: false }).limit(1);
+// Highest PV sequence number, optionally narrowed by a filter (e.g. one month)
+async function topSeq(narrow) {
+  let q = db.from('vouchers').select('pv_seq').not('pv_seq', 'is', null);
+  if (narrow) q = narrow(q);
+  const { data, error } = await q.order('pv_seq', { ascending: false }).limit(1);
   if (error) throw error;
-  return data && data[0] ? data[0].pv_no : '';
+  return data && data[0] ? Number(data[0].pv_seq) : 0;
 }
-async function allVouchers() { // Supabase returns max 1000 rows per request, so page through
-  const out = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await db.from('vouchers').select('*').order('created_at', { ascending: true }).range(from, from + 999);
+// Next number is based on the voucher's own month, so backdated vouchers number correctly
+async function nextNumber(date, s) {
+  const [y, m] = date.split('-').map(Number);
+  const monthMax = await topSeq(q => q.eq('pv_year', y).eq('pv_month', m));
+  const globalMax = s.reset ? 0 : await topSeq();
+  return L.nextPV({ monthMax, globalMax, seed: s.seed, reset: s.reset, date });
+}
+
+// Sorting / filtering. Every sort is chronological by PV No. as the tie-breaker.
+const PVCOLS = ['pv_year', 'pv_month', 'pv_seq'];
+const SORTS = {
+  pv: PVCOLS,
+  date: ['voucher_date', ...PVCOLS],
+  requester: ['requester_norm', 'voucher_date', ...PVCOLS],
+  amount: ['amount_cents', ...PVCOLS]
+};
+const isDay = d => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d));
+function listParams(q) {
+  q = q || {};
+  return {
+    sort: SORTS[q.sort] ? q.sort : 'pv',
+    asc: String(q.dir || 'asc').toLowerCase() !== 'desc',   // default: oldest first
+    requester: String(q.requester || '').trim().toLowerCase(),
+    from: isDay(String(q.from || '')) ? String(q.from) : '',
+    to: isDay(String(q.to || '')) ? String(q.to) : ''
+  };
+}
+async function allVouchers(params) { // Supabase returns max 1000 rows per request, so page through
+  const p = listParams(params), out = [];
+  for (let start = 0; ; start += 1000) {
+    let q = db.from('vouchers').select('*');
+    if (p.requester) q = q.eq('requester_norm', p.requester);
+    if (p.from) q = q.gte('voucher_date', p.from);
+    if (p.to) q = q.lte('voucher_date', p.to);
+    for (const c of SORTS[p.sort]) q = q.order(c, { ascending: p.asc, nullsFirst: false });
+    q = q.order('created_at', { ascending: p.asc }).order('id', { ascending: p.asc });
+    const { data, error } = await q.range(start, start + 999);
     if (error) throw error;
     out.push(...data);
     if (data.length < 1000) break;
@@ -73,11 +109,11 @@ async function allVouchers() { // Supabase returns max 1000 rows per request, so
 }
 
 /* ---------- API ---------- */
-app.get('/api/vouchers', auth, ah(async (req, res) => res.json(await allVouchers())));
+app.get('/api/vouchers', auth, ah(async (req, res) => res.json(await allVouchers(req.query))));
 
 app.get('/api/next-pv', auth, ah(async (req, res) => {
-  const s = await getSettings();
-  res.json({ pv: L.nextPV({ last: await lastPV(), seed: s.seed, reset: s.reset, date: L.today(TZ) }) });
+  const date = isDay(String(req.query.date || '')) ? String(req.query.date) : L.today(TZ);
+  res.json({ pv: await nextNumber(date, await getSettings()) });
 }));
 
 app.post('/api/vouchers', auth, ah(async (req, res) => {
@@ -89,11 +125,11 @@ app.post('/api/vouchers', auth, ah(async (req, res) => {
   const manual = String(b.pv || '').trim().slice(0, 40);
   if (!purpose || !requester) return res.status(400).json({ error: 'Purpose and requester are required.' });
   if (!Number.isFinite(cents)) return res.status(400).json({ error: 'Enter a valid amount greater than zero.' });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return res.status(400).json({ error: 'Invalid date.' });
+  if (!isDay(date)) return res.status(400).json({ error: 'Invalid date.' });
 
   const s = await getSettings();
   for (let i = 0; i < 6; i++) { // retry if two requests grab the same number
-    const pv = manual || L.nextPV({ last: await lastPV(), seed: s.seed, reset: s.reset, date });
+    const pv = manual || await nextNumber(date, s);
     const { data, error } = await db.from('vouchers')
       .insert({ pv_no: pv, voucher_date: date, amount_cents: cents, amount_words: L.amtWords(cents), purpose, requester })
       .select().single();
@@ -127,7 +163,7 @@ const day = () => L.today(TZ);
 app.get('/api/export.csv', auth, ah(async (req, res) => {
   const q = v => { v = String(v == null ? '' : v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return '"' + v.replace(/"/g, '""') + '"'; };
   const rows = [['PV No.', 'Date', 'Requested by', 'Purpose', 'Amount', 'Amount in Words', 'Generated at']]
-    .concat((await allVouchers()).map(v => [v.pv, v.date, v.requester, v.purpose, (v.cents / 100).toFixed(2), v.words, v.createdAt]));
+    .concat((await allVouchers(req.query)).map(v => [v.pv, v.date, v.requester, v.purpose, (v.cents / 100).toFixed(2), v.words, v.createdAt]));
   res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="PV-log-' + day() + '.csv"' });
   res.send('\ufeff' + rows.map(r => r.map(q).join(',')).join('\r\n'));
 }));
@@ -137,13 +173,14 @@ app.get('/api/backup.json', auth, ah(async (req, res) => {
 }));
 app.post('/api/import', auth, ah(async (req, res) => {
   const input = Array.isArray((req.body || {}).logs) ? req.body.logs : [];
-  const have = new Set((await allVouchers()).map(v => v.pv.toLowerCase()));
+  const key = pv => { const p = L.parsePV(pv); return p ? p.year + '-' + p.month + '-' + p.seq : pv.toLowerCase(); };
+  const have = new Set((await allVouchers()).map(v => key(v.pv)));
   const rows = []; let skipped = 0;
   for (const r of input) {
     const pv = String((r && r.pv) || '').trim(), cents = Number(r && r.cents);
     const date = String((r && r.date) || '');
-    if (!pv || !Number.isInteger(cents) || cents <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || have.has(pv.toLowerCase())) { skipped++; continue; }
-    have.add(pv.toLowerCase());
+    if (!pv || !Number.isInteger(cents) || cents <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || have.has(key(pv))) { skipped++; continue; }
+    have.add(key(pv));
     const row = { pv_no: pv, voucher_date: date, amount_cents: cents, amount_words: L.amtWords(cents), purpose: String(r.purpose || '').slice(0, 1000) || '-', requester: String(r.requester || '').slice(0, 200) || '-' };
     if (r.createdAt && !isNaN(Date.parse(r.createdAt))) row.created_at = new Date(r.createdAt).toISOString();
     rows.push(row);

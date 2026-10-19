@@ -6,7 +6,9 @@ Node.js (Express) backend + browser frontend + Supabase Postgres.
 server.js     API, login, PV numbering (runs on Render)
 lib.js        amount-in-words, PV number logic
 public/       the web page (index.html, style.css, app.js)
-schema.sql    database tables (run once in Supabase)
+schema.sql    database tables (fresh installs: run once in Supabase)
+migrations/   upgrade scripts for an existing database (run in order)
+test/         automated tests (`npm test`, no network or database needed)
 render.yaml   Render blueprint
 ```
 
@@ -51,3 +53,30 @@ Open http://localhost:3000
 - The server sets the date (in `APP_TIMEZONE`) and assigns the PV No., so two devices
   can't create the same number. The database also enforces unique PV numbers.
 - Moving the old log from the Claude version: click **Backup** there, then **Restore** here.
+
+## Upgrading an existing install to PV2 (sorting, filters, chronological PV numbers)
+1. **Supabase first:** SQL Editor > New query > paste the *contents* of `migrations/002_pv_sort.sql` > Run.
+   It is additive, safe to run twice, and fills in your existing vouchers automatically.
+2. Commit and push this version to GitHub. Render redeploys by itself.
+3. Open the app and hard-refresh (Ctrl+F5).
+
+Deploying the code before step 1 makes the log fail to load (the new columns would not exist yet).
+To roll back, `git revert` the commit; the extra database columns do no harm to the old code.
+
+### What changed
+- **Log ordering:** sort by PV No. (chronological), date requested, requester or amount, in either
+  direction. Click a column heading or use the Sort by box. Filter by requester and by date range.
+  Ties are always broken by PV No.
+- **Chronological PV numbers:** stored as year / month / sequence, so `01-2027-001` correctly sorts after
+  `10-2026-021`. `10-2026-21` and `10-2026-021` count as the same number.
+- **Numbering fix:** the next number now comes from the highest sequence *in the month of the date
+  requested*, so a backdated voucher gets a number in its own month instead of clashing.
+- **Export CSV** follows the current sort, requester and date filters. **Backup** is always the full log.
+
+### API
+`GET /api/vouchers?sort=pv|date|requester|amount&dir=asc|desc&requester=<name>&from=YYYY-MM-DD&to=YYYY-MM-DD`
+(default: chronological by PV, oldest first). `GET /api/next-pv?date=YYYY-MM-DD`.
+
+### Not changed
+Deleting a voucher still removes it, so its number can be reused if it was the highest in its month.
+A "void" status that keeps the number would avoid that; it is not part of PV2.

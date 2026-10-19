@@ -33,16 +33,27 @@ function parseCents(v) {
 function today(tz) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
-// Next PV No. like 10-2026-021, following `last` (or `seed` if there is no voucher yet)
-function nextPV({ last, seed, reset, date }) {
-  const [y, m] = date.split('-');
-  const pre = m + '-' + y;
-  const src = (last || seed || '').trim();
-  const mm = /^(\d{1,2})-(\d{4})-(\d+)$/.exec(src);
-  if (!mm) return pre + '-001';
-  const same = mm[1].padStart(2, '0') + '-' + mm[2] === pre;
-  const w = Math.max(3, mm[3].length);
-  const n = same || !reset ? parseInt(mm[3], 10) + 1 : 1;
-  return pre + '-' + String(n).padStart(w, '0');
+// "10-2026-021" -> {month:10, year:2026, seq:21}, or null if it is not in that format
+function parsePV(pv) {
+  const m = /^(\d{1,2})-(\d{4})-(\d{1,9})$/.exec(String(pv == null ? '' : pv).trim());
+  return m ? { month: +m[1], year: +m[2], seq: +m[3] } : null;
 }
-module.exports = { amtWords, parseCents, today, nextPV };
+// Chronological comparison: year, then month, then sequence. Unparseable numbers go last.
+function comparePV(a, b) {
+  const x = parsePV(a), y = parsePV(b);
+  if (!x || !y) return x ? -1 : y ? 1 : String(a).localeCompare(String(b));
+  return x.year - y.year || x.month - y.month || x.seq - y.seq;
+}
+// Next PV No. for a voucher dated `date` (YYYY-MM-DD).
+//   monthMax  = highest sequence already used in that voucher's month
+//   globalMax = highest sequence used anywhere (only needed when reset is false)
+//   seed      = "last PV used" setting, used until that month has vouchers
+function nextPV({ monthMax = 0, globalMax = 0, seed = '', reset = true, date }) {
+  const [y, m] = date.split('-');
+  const sd = parsePV(seed);
+  const base = reset
+    ? Math.max(monthMax, sd && sd.year === +y && sd.month === +m ? sd.seq : 0)
+    : Math.max(globalMax, sd ? sd.seq : 0);
+  return m + '-' + y + '-' + String(base + 1).padStart(3, '0');
+}
+module.exports = { amtWords, parseCents, today, parsePV, comparePV, nextPV };

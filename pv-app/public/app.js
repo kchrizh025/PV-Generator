@@ -1,7 +1,7 @@
 (function(){
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let logs=[],st={seed:'',reset:true},dlCap=true,ready=false,current=null,pvDirty=false,booting=false;
+let logs=[],st={seed:'',reset:true},dlCap=true,ready=false,current=null,pvDirty=false,booting=false,view=[];
 
 /* ---------- amount helpers ---------- */
 const O=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
@@ -21,15 +21,35 @@ const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth
 const fmtDate=iso=>{const p=String(iso).split('-');return p.length===3?(+p[1])+'/'+(+p[2])+'/'+p[0]:''};
 const wordsOf=c=>Number.isFinite(c)?amtWords(c):'';
 
-/* ---------- PV numbering ---------- */
-function lastPV(){return logs.length?logs[logs.length-1].pv:st.seed}
-function nextPV(){
- const last=lastPV(),now=new Date(),pre=String(now.getMonth()+1).padStart(2,'0')+'-'+now.getFullYear();
- const m=/^(\d{1,2})-(\d{4})-(\d+)$/.exec((last||'').trim());
- if(!m)return pre+'-001';
- const same=(m[1].padStart(2,'0')+'-'+m[2])===pre,w=Math.max(3,m[3].length);
- const n=(same||!st.reset)?parseInt(m[3],10)+1:1;
- return pre+'-'+String(n).padStart(w,'0')}
+/* ---------- PV numbering (mirrors the server) ---------- */
+function parsePV(pv){const m=/^(\d{1,2})-(\d{4})-(\d{1,9})$/.exec(String(pv||'').trim());return m?{month:+m[1],year:+m[2],seq:+m[3]}:null}
+const pvKey=pv=>{const p=parsePV(pv);return p?p.year+'-'+p.month+'-'+p.seq:String(pv||'').trim().toLowerCase()};
+function nextPV(date){
+ const [y,m]=(date||today()).split('-').map(Number);
+ const ps=logs.map(l=>parsePV(l.pv)).filter(Boolean),sd=parsePV(st.seed);
+ const seqs=(st.reset?ps.filter(p=>p.year===y&&p.month===m):ps).map(p=>p.seq);
+ const sdSeq=sd&&(!st.reset||(sd.year===y&&sd.month===m))?sd.seq:0;
+ return String(m).padStart(2,'0')+'-'+y+'-'+String(Math.max(0,sdSeq,...seqs)+1).padStart(3,'0')}
+
+/* ---------- log ordering and filters ---------- */
+const DIR0={pv:'desc',date:'desc',requester:'asc',amount:'desc'};
+const LBL={pv:['Oldest first','Newest first'],date:['Oldest first','Newest first'],requester:['A \u2192 Z','Z \u2192 A'],amount:['Lowest first','Highest first']};
+let ord={sort:'pv',dir:'desc',req:'',from:'',to:''};
+try{const o=JSON.parse(localStorage.getItem('pv_ord')||'null');if(o&&DIR0[o.sort]){ord.sort=o.sort;ord.dir=o.dir==='asc'?'asc':'desc'}}catch(e){}
+const ordQS=()=>{const p=new URLSearchParams({sort:ord.sort,dir:ord.dir});if(ord.req)p.set('requester',ord.req);if(ord.from)p.set('from',ord.from);if(ord.to)p.set('to',ord.to);return p.toString()};
+let viewSeq=0;
+async function loadView(){const n=++viewSeq;const v=await api('/vouchers?'+ordQS());if(n===viewSeq){view=v;renderLogs()}}
+async function reload(){await loadAll();reqOpts();await loadView()}
+function syncCtl(){
+ $('#o-sort').value=ord.sort;$('#o-dir').textContent=LBL[ord.sort][ord.dir==='asc'?0:1]+(ord.dir==='asc'?' \u2191':' \u2193');
+ $('#o-req').value=ord.req;$('#o-from').value=ord.from;$('#o-to').value=ord.to;
+ document.querySelectorAll('th[data-s]').forEach(t=>{t.textContent=t.dataset.l+(t.dataset.s===ord.sort?(ord.dir==='asc'?' \u25b2':' \u25bc'):'')})}
+function applyOrd(){try{localStorage.setItem('pv_ord',JSON.stringify({sort:ord.sort,dir:ord.dir}))}catch(e){}syncCtl();loadView().catch(e=>{if(e.status!==401)flash(e.message)})}
+function reqOpts(){
+ const seen=new Map();logs.forEach(l=>{const k=l.requester.trim().toLowerCase();if(!seen.has(k))seen.set(k,l.requester.trim())});
+ const sel=$('#o-req');
+ sel.innerHTML='<option value="">All requesters</option>'+[...seen].sort((a,b)=>a[1].localeCompare(b[1])).map(([k,n])=>'<option value="'+esc(k)+'">'+esc(n)+'</option>').join('');
+ if(!seen.has(ord.req))ord.req='';sel.value=ord.req}
 
 /* ---------- voucher markup ---------- */
 function sheet(v){
@@ -60,28 +80,29 @@ async function api(path,opt){
  if(!r.ok)throw Object.assign(new Error((j&&j.error)||'Request failed'),{status:r.status});
  return j}
 function showLogin(){ready=false;booting=false;$('#login').classList.remove('hidden');$('#logout').classList.add('hidden')}
-async function loadAll(){logs=await api('/vouchers');const s=await api('/settings');st={seed:s.seed||'',reset:s.reset!==false};ready=true}
+async function loadAll(){logs=await api('/vouchers?sort=pv&dir=asc');const s=await api('/settings');st={seed:s.seed||'',reset:s.reset!==false};ready=true}
 
 /* ---------- UI ---------- */
 let mt;function flash(t){const m=$('#msg');m.textContent=t;m.classList.remove('hidden');clearTimeout(mt);mt=setTimeout(()=>m.classList.add('hidden'),3500)}
 function defaults(){
- if(!pvDirty)$('#f-pv').value=nextPV();
  $('#f-date').value=today();
- $('#pv-hint').textContent=lastPV()?'Follows '+lastPV():''}
+ if(!pvDirty)$('#f-pv').value=nextPV($('#f-date').value);
+ $('#pv-hint').textContent=st.reset?'Numbered by the month of the date requested.':'Numbering continues across months.'}
 function draftVal(){return{pv:$('#f-pv').value.trim(),date:$('#f-date').value,cents:parseCents($('#f-amt').value),purpose:$('#f-purpose').value.trim(),requester:$('#f-req').value.trim()}}
 function refresh(){
  const v=draftVal(),amtTxt=$('#f-amt').value.trim();
  $('#f-words').textContent=Number.isFinite(v.cents)?amtWords(v.cents):'\u2014';
- const dup=v.pv&&logs.some(l=>l.pv.toLowerCase()===v.pv.toLowerCase());
+ const dup=v.pv&&logs.some(l=>pvKey(l.pv)===pvKey(v.pv));
  $('#gen').disabled=!(ready&&v.pv&&v.date&&Number.isFinite(v.cents)&&v.purpose&&v.requester&&!dup);
  $('#gen-hint').textContent=!ready?'Loading your log\u2026':dup?'PV No. '+v.pv+' is already in the log.':(amtTxt&&!Number.isFinite(v.cents)?'Enter an amount greater than zero.':'');
  if(!current)paint(v)}
 function reqList(){$('#reqs').innerHTML=[...new Set(logs.map(l=>l.requester))].sort().map(r=>'<option value="'+esc(r)+'">').join('')}
 function renderLogs(){
- const q=$('#q').value.trim().toLowerCase(),total=logs.reduce((a,l)=>a+l.cents,0);
- $('#lg-title').textContent='Voucher log ('+logs.length+(logs.length?' \u00b7 \u20b1'+fmtFull(total):'')+')';
- const list=logs.slice().reverse().filter(l=>!q||[l.pv,l.requester,l.purpose,l.date,fmtDate(l.date),fmtAmt(l.cents)].join(' ').toLowerCase().includes(q));
- $('#rows').innerHTML=list.length?list.map(l=>`<tr class="${current&&current.id===l.id?'cur':''}"><td><b>${esc(l.pv)}</b></td><td>${fmtDate(l.date)}</td><td>${esc(l.requester)}</td><td class="pur">${esc(l.purpose)}</td><td class="num">${fmtFull(l.cents)}</td><td class="act"><button class="btn sm" data-a="view" data-id="${l.id}">Open</button> <button class="btn sm" data-a="print" data-id="${l.id}">Print</button> <button class="btn sm dl ${dlCap?'':'hidden'}" data-a="pdf" data-id="${l.id}">PDF</button> <button class="btn sm danger" data-a="del" data-id="${l.id}">Delete</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty">'+(logs.length?'No matches.':'No vouchers yet. Generated forms will be listed here.')+'</td></tr>';
+ const q=$('#q').value.trim().toLowerCase();
+ const list=view.filter(l=>!q||[l.pv,l.requester,l.purpose,l.date,fmtDate(l.date),fmtAmt(l.cents)].join(' ').toLowerCase().includes(q));
+ const total=list.reduce((a,l)=>a+l.cents,0),filt=q||ord.req||ord.from||ord.to;
+ $('#lg-title').textContent='Voucher log ('+(filt?list.length+' of '+logs.length:logs.length)+(list.length?' \u00b7 \u20b1'+fmtFull(total):'')+')';
+ $('#rows').innerHTML=list.length?list.map(l=>`<tr class="${current&&current.id===l.id?'cur':''}"><td><b>${esc(l.pv)}</b></td><td>${fmtDate(l.date)}</td><td>${esc(l.requester)}</td><td class="pur">${esc(l.purpose)}</td><td class="num">${fmtFull(l.cents)}</td><td class="act"><button class="btn sm" data-a="view" data-id="${l.id}">Open</button> <button class="btn sm" data-a="print" data-id="${l.id}">Print</button> <button class="btn sm dl ${dlCap?'':'hidden'}" data-a="pdf" data-id="${l.id}">PDF</button> <button class="btn sm danger" data-a="del" data-id="${l.id}">Delete</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty">'+(logs.length?'No vouchers match these filters.':'No vouchers yet. Generated forms will be listed here.')+'</td></tr>';
  reqList()}
 function openRec(id){
  const r=logs.find(l=>l.id===id);if(!r)return;current=r;
@@ -100,7 +121,7 @@ async function generate(){
  let rec;
  try{rec=await api('/vouchers',{method:'POST',body:{pv:pvDirty?v.pv:'',date:v.date,amount:(v.cents/100).toFixed(2),purpose:v.purpose,requester:v.requester}})}
  catch(e){if(e.status===409){try{await loadAll()}catch(x){}pvDirty=false;defaults()}refresh();return flash(e.message)}
- logs.push(rec);openRec(rec.id)}
+ try{await reload()}catch(e){logs.push(rec)}openRec(rec.id)}
 
 async function save(name,data){
  const type=/\.pdf$/.test(name)?'application/pdf':'application/octet-stream';
@@ -121,13 +142,20 @@ async function pdf(rec){
 function doPrint(){try{window.print()}catch(e){flash('Printing is not available here. Download the PDF instead.')}}
 
 /* ---------- events ---------- */
-['#f-pv','#f-date','#f-amt','#f-purpose','#f-req'].forEach(s=>$(s).addEventListener('input',()=>{if(s==='#f-pv')pvDirty=true;refresh()}));
+['#f-pv','#f-date','#f-amt','#f-purpose','#f-req'].forEach(s=>$(s).addEventListener('input',()=>{if(s==='#f-pv')pvDirty=true;if(s==='#f-date'&&!pvDirty&&$('#f-date').value)$('#f-pv').value=nextPV($('#f-date').value);refresh()}));
 $('#f-amt').addEventListener('blur',()=>{const c=parseCents($('#f-amt').value);if(Number.isFinite(c))$('#f-amt').value=fmtFull(c);refresh()});
 $('#gen').addEventListener('click',generate);
 $('#v-new').addEventListener('click',newVoucher);
 $('#v-print').addEventListener('click',doPrint);
 $('#v-pdf').addEventListener('click',()=>current&&pdf(current));
 $('#q').addEventListener('input',renderLogs);
+$('#o-sort').addEventListener('change',()=>{ord.sort=$('#o-sort').value;ord.dir=DIR0[ord.sort];applyOrd()});
+$('#o-dir').addEventListener('click',()=>{ord.dir=ord.dir==='asc'?'desc':'asc';applyOrd()});
+$('#o-req').addEventListener('change',()=>{ord.req=$('#o-req').value;applyOrd()});
+$('#o-from').addEventListener('change',()=>{ord.from=$('#o-from').value;applyOrd()});
+$('#o-to').addEventListener('change',()=>{ord.to=$('#o-to').value;applyOrd()});
+$('#o-clear').addEventListener('click',()=>{ord.req='';ord.from='';ord.to='';$('#q').value='';applyOrd()});
+document.querySelector('.lg thead').addEventListener('click',e=>{const t=e.target.closest('th[data-s]');if(!t)return;const k=t.dataset.s;if(ord.sort===k)ord.dir=ord.dir==='asc'?'desc':'asc';else{ord.sort=k;ord.dir=DIR0[k]}applyOrd()});
 $('#rows').addEventListener('click',async e=>{
  const b=e.target.closest('button');if(!b)return;const id=b.dataset.id,r=logs.find(l=>l.id===id);if(!r)return;
  if(b.dataset.a==='view')openRec(id);
@@ -135,15 +163,15 @@ $('#rows').addEventListener('click',async e=>{
  else if(b.dataset.a==='pdf')pdf(r);
  else if(b.dataset.a==='del'){
   if(!b.dataset.arm){b.dataset.arm=1;b.textContent='Confirm?';setTimeout(()=>{if(b.isConnected){delete b.dataset.arm;b.textContent='Delete'}},3000);return}
-  try{await api('/vouchers/'+id,{method:'DELETE'})}catch(x){return flash(x.message)}logs=logs.filter(l=>l.id!==id);
+  try{await api('/vouchers/'+id,{method:'DELETE'});await reload()}catch(x){return flash(x.message)}
   if(current&&current.id===id)newVoucher();else{defaults();refresh()}renderLogs();flash('Deleted '+r.pv)}});
-$('#x-csv').addEventListener('click',()=>{if(!logs.length)return flash('Nothing to export yet.');location.href='/api/export.csv'});
+$('#x-csv').addEventListener('click',()=>{if(!view.length)return flash('Nothing to export for this view.');location.href='/api/export.csv?'+ordQS()});
 $('#x-json').addEventListener('click',()=>{location.href='/api/backup.json'});
 $('#x-restore').addEventListener('click',()=>$('#x-file').click());
 $('#x-file').addEventListener('change',async e=>{
  const f=e.target.files[0];e.target.value='';if(!f)return;
  try{const o=JSON.parse(await f.text());const r=await api('/import',{method:'POST',body:{logs:Array.isArray(o)?o:(o.logs||[])}});
-  await loadAll();flash('Restored '+r.imported+' voucher'+(r.imported===1?'':'s')+(r.skipped?' ('+r.skipped+' already existed or invalid)':''));
+  await reload();flash('Restored '+r.imported+' voucher'+(r.imported===1?'':'s')+(r.skipped?' ('+r.skipped+' already existed or invalid)':''));
   renderLogs();if(!current){pvDirty=false;defaults();refresh()}}
  catch(x){flash(x.status?x.message:'That file could not be read.')}});
 $('#s-save').addEventListener('click',async()=>{
@@ -153,10 +181,10 @@ $('#s-save').addEventListener('click',async()=>{
 if(window.ResizeObserver)new ResizeObserver(fit).observe($('#stage'));else addEventListener('resize',fit);
 
 /* ---------- start ---------- */
-defaults();refresh();renderLogs();
+defaults();refresh();syncCtl();renderLogs();
 async function boot(){
  if(booting)return;booting=true;$('#login').classList.add('hidden');$('#logout').classList.remove('hidden');
- try{await loadAll()}catch(e){booting=false;if(e.status!==401)flash('Could not load the log: '+e.message);return}
+ try{await reload()}catch(e){booting=false;if(e.status!==401)flash('Could not load the log: '+e.message);return}
  $('#s-seed').value=st.seed||'';$('#s-reset').checked=st.reset!==false;
  if(!current){defaults();refresh()}renderLogs()}
 $('#login-form').addEventListener('submit',async e=>{

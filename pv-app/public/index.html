@@ -49,12 +49,20 @@
  <div class="bar">
   <h2 id="lg-title">Voucher log</h2>
   <input id="q" type="search" placeholder="Search log…" aria-label="Search log">
-  <button class="btn sm dl" id="x-csv">Export CSV</button>
+  <button class="btn sm dl" id="x-csv" title="Exports the rows matching the current sort, requester and date filters">Export CSV</button>
   <button class="btn sm dl" id="x-json">Backup</button>
   <button class="btn sm" id="x-restore">Restore</button>
   <input type="file" id="x-file" accept=".json,application/json" class="hidden">
  </div>
- <div class="tw"><table class="lg"><thead><tr><th>PV No.</th><th>Date</th><th>Requested by</th><th>Purpose</th><th class="num">Amount</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+ <div class="filters">
+  <label>Sort by<select id="o-sort"><option value="pv">PV No. (chronological)</option><option value="date">Date requested</option><option value="requester">Requester</option><option value="amount">Amount</option></select></label>
+  <button class="btn sm" id="o-dir" type="button">Newest first</button>
+  <label>Requester<select id="o-req"><option value="">All requesters</option></select></label>
+  <label>From<input type="date" id="o-from"></label>
+  <label>To<input type="date" id="o-to"></label>
+  <button class="btn sm" id="o-clear" type="button">Clear filters</button>
+ </div>
+ <div class="tw"><table class="lg"><thead><tr><th class="sort" data-s="pv" data-l="PV No.">PV No.</th><th class="sort" data-s="date" data-l="Date">Date</th><th class="sort" data-s="requester" data-l="Requested by">Requested by</th><th>Purpose</th><th class="num sort" data-s="amount" data-l="Amount">Amount</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
  <details><summary>Numbering settings</summary>
   <div class="set">
    <label>Last PV No. used<input type="text" id="s-seed" placeholder="e.g. 10-2026-020"></label>
