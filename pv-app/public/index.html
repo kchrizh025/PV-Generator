@@ -10,7 +10,7 @@
 </head>
 <body>
 <div class="wrap">
-<header><div class="ht"><h1>Payment Voucher Generator</h1><p>Requests to HO &middot; enter the details, the rest fills itself in</p></div><div class="hb"><button class="btn sm" id="open-set" type="button">&#9881; Settings</button><button class="btn sm hidden" id="logout">Sign out</button></div></header>
+<header><div class="ht"><h1>Payment Voucher Generator</h1><p>Requests to HO &middot; enter the details, the rest fills itself in</p></div><div class="hb"><button class="btn sm" id="open-log" type="button">Log <span id="log-n"></span></button><button class="btn sm" id="open-set" type="button">&#9881; Settings</button><button class="btn sm hidden" id="logout">Sign out</button></div></header>
 
 <nav class="tabs" id="tabs"><button class="tab on" data-t="vouchers" type="button">Vouchers</button><button class="tab" data-t="reports" type="button">Reports</button></nav>
 
@@ -48,20 +48,25 @@
 
  <div class="stage" id="stage">
   <div class="tb glass" id="tb">
-   <button class="tbb" id="t-form" type="button" title="Hide / show form">&#9776;</button><span class="sep"></span>
+   <button class="tbb" id="t-form" type="button" title="Hide / show form" aria-label="Hide or show form"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+   <button class="tbb" id="t-log" type="button" title="Voucher log" aria-label="Open voucher log"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></button><span class="sep"></span>
    <button class="tbb" id="z-out" type="button" title="Zoom out">&minus;</button>
-   <button class="tbb zl" id="z-fit" type="button" title="Fit to width">Fit</button>
-   <button class="tbb" id="z-in" type="button" title="Zoom in">+</button><span class="sep"></span>
+   <span class="zp" id="z-pct">Fit</span>
+   <button class="tbb" id="z-in" type="button" title="Zoom in">+</button>
+   <button class="tbb zl" id="z-fit" type="button" title="Fit to width">Fit</button><span class="sep"></span>
    <select id="t-paper" title="Paper size"><option value="letter">Letter</option><option value="a4">A4</option></select><span class="sep"></span>
-   <button class="tbb" id="t-print" type="button" title="Print">&#128424;</button>
-   <button class="tbb" id="t-pdf" type="button" title="Download PDF">&#11015;</button>
+   <button class="tbb" id="t-print" type="button" title="Print" aria-label="Print"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></svg></button>
+   <button class="tbb" id="t-pdf" type="button" title="Download PDF" aria-label="Download PDF"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 21h16"/></svg></button>
   </div>
-  <div class="paper" id="paper"></div></div>
+  <div class="pw" id="pw"><div class="paper" id="paper"></div></div></div>
 </div>
 
-<section class="card logs vtab" id="logsec">
+<div id="dbg"></div>
+<aside id="drawer" aria-label="Voucher log" aria-hidden="true">
+<section class="card logs" id="logsec">
  <div class="bar">
   <h2 id="lg-title">Voucher log</h2>
+  <button class="btn sm" id="dr-x" type="button">Close &#10005;</button>
   <input id="q" type="search" placeholder="Search log…" aria-label="Search log">
   <button class="btn sm dl" id="x-csv" title="Exports the rows matching the current sort, requester and date filters">Export CSV</button>
   <button class="btn sm dl" id="x-json">Backup</button>
@@ -87,6 +92,7 @@
   <p class="hint" style="margin-top:8px">Only used until the first voucher is logged &mdash; after that the next number follows the latest voucher in the log.</p>
  </details>
 </section>
+</aside>
 </div>
 <section class="wrap hidden" id="reports">
  <div class="card">

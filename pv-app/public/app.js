@@ -72,7 +72,7 @@ function sheet(v){
  return copy(false)+'<div class="cut"></div><div class="cutl">&#9986; CUT HERE</div>'+copy(true)}
 
 function paint(v){$('#paper').innerHTML=sheet(v);fit()}
-function fit(){const w=PVUI.paper==='a4'?794:816,z=PVUI.zoom;$('#paper').style.zoom=z||Math.min(1,($('#stage').clientWidth-24)/w)}
+function fit(){const w=PVUI.paper==='a4'?794:816,z=PVUI.zoom;$('#paper').style.zoom=z||Math.min(1,($('#stage').clientWidth-24)/w);const pc=$('#z-pct');if(pc)pc.textContent=Math.round(parseFloat($('#paper').style.zoom)*100)+'%'}
 PVUI.refit=fit;
 
 /* ---------- API (talks to the Node backend) ---------- */
@@ -87,7 +87,12 @@ function showLogin(){ready=false;booting=false;$('#login').classList.remove('hid
 async function loadAll(){logs=await api('/vouchers?sort=pv&dir=asc');const s=await api('/settings');st={seed:s.seed||'',reset:s.reset!==false};ready=true}
 
 /* ---------- UI ---------- */
-let mt;function flash(t){const m=$('#msg');m.textContent=t;m.classList.remove('hidden');clearTimeout(mt);mt=setTimeout(()=>m.classList.add('hidden'),3500)}
+let mt;function flash(t,act){const m=$('#msg');m.textContent=t;if(act){const a=document.createElement('a');a.href='#';a.textContent=' '+act.label;a.style.cssText='color:inherit;font-weight:700;text-decoration:underline;margin-left:6px';a.onclick=e=>{e.preventDefault();m.classList.add('hidden');act.fn()};m.appendChild(a)}m.classList.remove('hidden');clearTimeout(mt);mt=setTimeout(()=>m.classList.add('hidden'),act?6000:3500)}
+function openDrawer(id){$('#drawer').classList.add('open');$('#dbg').classList.add('open');$('#drawer').setAttribute('aria-hidden','false');if(id){const c=document.querySelector('.rsel[value="'+id+'"]');if(c)setTimeout(()=>c.scrollIntoView({block:'center'}),260)}}
+function closeDrawer(){$('#drawer').classList.remove('open');$('#dbg').classList.remove('open');$('#drawer').setAttribute('aria-hidden','true')}
+['#open-log','#t-log'].forEach(s=>$(s).addEventListener('click',()=>openDrawer(current&&current.id)));
+$('#dr-x').addEventListener('click',closeDrawer);$('#dbg').addEventListener('click',closeDrawer);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
 function defaults(){
  if(!$('#f-cat').value)$('#f-cat').value=ls('pv_lastcat');
  $('#f-date').value=today();
@@ -103,6 +108,7 @@ function refresh(){
  if(!current)paint(v)}
 function reqList(){$('#cats').innerHTML=[...new Set(logs.map(l=>l.category).filter(Boolean))].sort().map(r=>'<option value="'+esc(r)+'">').join('');$('#reqs').innerHTML=[...new Set(logs.map(l=>l.requester))].sort().map(r=>'<option value="'+esc(r)+'">').join('')}
 function renderLogs(){
+ $('#log-n').textContent='('+logs.length+')';
  const q=$('#q').value.trim().toLowerCase();
  const list=view.filter(l=>!q||[l.pv,l.requester,l.category,l.purpose,l.date,fmtDate(l.date),fmtAmt(l.cents)].join(' ').toLowerCase().includes(q));
  const total=list.reduce((a,l)=>a+l.cents,0),filt=q||ord.req||ord.from||ord.to;
@@ -126,7 +132,7 @@ async function generate(){
  let rec;
  try{rec=await api('/vouchers',{method:'POST',body:{pv:pvDirty?v.pv:'',date:v.date,amount:(v.cents/100).toFixed(2),purpose:v.purpose,requester:v.requester,category:$('#f-cat').value.trim()}})}
  catch(e){if(e.status===409){try{await loadAll()}catch(x){}pvDirty=false;defaults()}refresh();return flash(e.message)}
- ls('pv_lastcat',rec.category||v.category||'');ls('pv_draft',null);try{await reload()}catch(e){logs.push(rec)}openRec(rec.id)}
+ ls('pv_lastcat',rec.category||v.category||'');ls('pv_draft',null);try{await reload()}catch(e){logs.push(rec)}openRec(rec.id);flash('Saved to log.',{label:'View in log',fn:()=>openDrawer(rec.id)})}
 
 async function save(name,data){
  const type=/\.pdf$/.test(name)?'application/pdf':'application/octet-stream';
@@ -173,8 +179,8 @@ $('#rows').addEventListener('click',e=>{const b=e.target.closest('[data-a="cat"]
  i.onkeydown=ev=>{if(ev.key==='Enter')commit(true);if(ev.key==='Escape')commit(false)};i.onblur=()=>commit(true)});
 $('#rows').addEventListener('click',async e=>{
  const b=e.target.closest('button');if(!b)return;const id=b.dataset.id,r=logs.find(l=>l.id===id);if(!r)return;
- if(b.dataset.a==='view')openRec(id);
- else if(b.dataset.a==='print'){openRec(id);setTimeout(doPrint,150)}
+ if(b.dataset.a==='view'){openRec(id);closeDrawer()}
+ else if(b.dataset.a==='print'){openRec(id);closeDrawer();setTimeout(doPrint,300)}
  else if(b.dataset.a==='pdf')pdf(r);
  else if(b.dataset.a==='del'){
   if(!b.dataset.arm){b.dataset.arm=1;b.textContent='Confirm?';setTimeout(()=>{if(b.isConnected){delete b.dataset.arm;b.textContent='Delete'}},3000);return}

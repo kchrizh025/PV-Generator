@@ -38,7 +38,7 @@ $('#ptabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!
  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('hidden',p.dataset.p!==b.dataset.p))});
 $('#t-paper').addEventListener('change',e=>{u.paper=e.target.value;save();apply()});
 const cur=()=>parseFloat($('#paper').style.zoom)||1;
-function zoom(d){PVUI.zoom=d===0?0:Math.min(1.6,Math.max(.4,+(cur()+d).toFixed(2)));PVUI.refit();$('#z-fit').textContent=PVUI.zoom?Math.round(PVUI.zoom*100)+'%':'Fit'}
+function zoom(d){PVUI.zoom=d===0?0:Math.min(1.6,Math.max(.4,+(cur()+d).toFixed(2)));PVUI.refit()}
 $('#z-in').onclick=()=>zoom(.1);$('#z-out').onclick=()=>zoom(-.1);$('#z-fit').onclick=()=>zoom(0);
 $('#t-form').onclick=()=>{$('#grid').classList.toggle('collapsed');setTimeout(()=>PVUI.refit(),60)};
 $('#u-photo').onclick=()=>$('#u-file').click();

@@ -30,7 +30,7 @@ textarea{resize:vertical}
 .stack{display:grid;gap:8px}
 .badge{display:inline-block;background:var(--accent);color:var(--ink);border-radius:99px;font-size:calc(11px*var(--fs,1));font-weight:700;padding:2px 9px;margin-bottom:8px}
 .kv{font-size:calc(13px*var(--fs,1));color:var(--muted);margin:0 0 12px}.kv b{color:var(--text)}
-.stage{position:relative;background:var(--stage);border:1px solid var(--border);border-radius:16px;padding:12px;overflow:auto;max-height:calc(100vh - 40px)}
+.stage{position:relative;background:var(--stage);border:1px solid var(--border);border-radius:16px;padding:12px}.pw{overflow-x:auto}
 .hidden{display:none!important}
 header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:6px}.hb{display:flex;gap:8px}
 #login{position:fixed;inset:0;background:var(--bg);display:grid;place-items:center;z-index:20;padding:16px}
@@ -68,7 +68,7 @@ details{margin-top:12px;font-size:calc(13px*var(--fs,1))}summary{cursor:pointer;
 :root[data-font="rounded"]{--ff:ui-rounded,"Nunito","Trebuchet MS","Segoe UI",sans-serif}
 :root[data-font="classic"]{--ff:Palatino,"Palatino Linotype","Book Antiqua",Georgia,serif}
 /* ---- background patterns ---- */
-body[data-pat="dots"]{background-image:radial-gradient(color-mix(in srgb,var(--text) 18%,transparent) 1.2px,transparent 1.2px);background-size:18px 18px}
+body[data-pat="dots"]{background-image:radial-gradient(color-mix(in srgb,var(--text) 12%,transparent) 1.2px,transparent 1.2px);background-size:18px 18px}
 body[data-pat="grid"]{background-image:linear-gradient(color-mix(in srgb,var(--text) 9%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--text) 9%,transparent) 1px,transparent 1px);background-size:26px 26px}
 body[data-pat="lines"]{background-image:repeating-linear-gradient(0deg,color-mix(in srgb,var(--text) 8%,transparent) 0 1px,transparent 1px 22px)}
 body[data-pat="diag"]{background-image:repeating-linear-gradient(45deg,color-mix(in srgb,var(--accent) 12%,transparent) 0 2px,transparent 2px 16px)}
@@ -80,7 +80,7 @@ body.photo{background-size:cover;background-position:center;background-attachmen
 /* ---- settings side button + panel ---- */
 #setbtn{position:fixed;top:50%;transform:translateY(-50%);z-index:15}
 html[data-side="right"] #setbtn{right:0}html[data-side="left"] #setbtn{left:0}html[data-side="hide"] #setbtn{display:none}
-#set-tab{font-size:20px;width:40px;height:48px;border:1px solid var(--border);background:var(--accent);color:var(--ink);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+#set-tab{font-size:16px;width:30px;height:40px;opacity:.85;border:1px solid var(--border);background:var(--accent);color:var(--ink);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 html[data-side="right"] #set-tab{border-radius:12px 0 0 12px;padding-right:0}
 html[data-side="left"] #set-tab{border-radius:0 12px 12px 0}
 #setpanel{position:fixed;top:0;bottom:0;width:min(330px,92vw);background:var(--surface);color:var(--text);border:1px solid var(--border);z-index:30;display:flex;flex-direction:column;box-shadow:0 0 24px rgba(0,0,0,.3);padding-top:env(safe-area-inset-top,0px)}
@@ -134,6 +134,21 @@ body.rep .vtab{display:none!important}
 :root[data-density="compact"] input,:root[data-density="compact"] textarea,:root[data-density="compact"] select{padding:5px 8px}
 :root[data-density="compact"] .lg td{padding:4px 8px}:root[data-density="compact"] .wrap{padding-top:12px}
 
+/* ---- toolbar icons + zoom label ---- */
+.tbb svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle}
+.zp{min-width:46px;text-align:center;font-weight:600;font-size:calc(13px*var(--fs,1));color:var(--muted)}
+#set-tab:hover{opacity:1}
+/* ---- log drawer ---- */
+#dbg{position:fixed;inset:0;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:24}
+#dbg.open{opacity:1;pointer-events:auto}
+#drawer{position:fixed;top:0;bottom:0;left:0;width:min(960px,92vw);overflow:auto;z-index:25;background:var(--bg);border-right:1px solid var(--border);box-shadow:0 0 30px rgba(0,0,0,.35);transform:translateX(-104%);visibility:hidden;transition:transform .25s ease,visibility .25s;padding-top:env(safe-area-inset-top,0px)}
+html[data-side="left"] #drawer{left:auto;right:0;border-right:0;border-left:1px solid var(--border);transform:translateX(104%)}
+#drawer.open,html[data-side="left"] #drawer.open{transform:none;visibility:visible}
+#drawer .logs{margin:0;border:0;border-radius:0;box-shadow:none;min-height:100%}
+#drawer .bar:not(.bulk){position:sticky;top:0;z-index:2;background:var(--surface);padding:6px 0}
+@media (max-width:700px){#drawer{width:100vw}}
+@media (prefers-reduced-motion:reduce){#drawer,#dbg{transition:none}}
+
 /* voucher paper — always black on white */
 .paper{width:8.5in;min-height:10.95in;padding:.4in;background:#fff;color:#000;font-family:"Times New Roman",Times,serif;box-shadow:0 2px 10px rgba(0,0,0,.25)}
 .paper *{color:#000}
@@ -149,8 +164,8 @@ body.rep .vtab{display:none!important}
 @media print{
  @page{size:letter;margin:0}
  :root{padding:0}html,body{background:#fff!important}
- header,#draft,#view,#logsec,#msg,#login,#setbtn,#setpanel,.tabs,#r-csv,#r-print,.filters,.tb,#bulk{display:none!important}
+ header,#draft,#view,#logsec,#msg,#login,#setbtn,#setpanel,.tabs,#r-csv,#r-print,.filters,.tb,#bulk,#drawer,#dbg{display:none!important}
  .wrap{padding:0;max-width:none}.grid{display:block}
- .stage{border:0;padding:0;background:none;overflow:visible;max-height:none}.grid.collapsed #leftcol{display:none}
+ .stage{border:0;padding:0;background:none}.pw{overflow:visible}.grid.collapsed #leftcol{display:none}
  .paper{zoom:1!important;box-shadow:none;margin:0}
 }
