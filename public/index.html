@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Payment Voucher Generator</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<header><button class="btn sm hidden" id="logout">Sign out</button><h1>Payment Voucher Generator</h1><p>Requests to HO &middot; enter the details, the rest fills itself in</p></header>
+
+<div class="grid">
+ <div>
+  <section class="card" id="draft">
+   <h2>New voucher</h2>
+   <label>PV No.<input id="f-pv" autocomplete="off"></label>
+   <div class="hint" id="pv-hint"></div>
+   <div class="row2">
+    <label>Amount (&#8369;)<input id="f-amt" inputmode="decimal" placeholder="0.00" autocomplete="off"></label>
+    <label>Date<input type="date" id="f-date"></label>
+   </div>
+   <div class="words"><span>Amount in words</span><strong id="f-words">&mdash;</strong></div>
+   <label>Purpose<textarea id="f-purpose" rows="3" placeholder="What is the money for?"></textarea></label>
+   <label>Requested by<input id="f-req" list="reqs" autocomplete="off"></label>
+   <datalist id="reqs"></datalist>
+   <button class="btn primary" id="gen" disabled>Generate voucher</button>
+   <div class="hint" id="gen-hint"></div>
+  </section>
+
+  <section class="card hidden" id="view">
+   <span class="badge">Saved to log</span>
+   <h2 id="v-title"></h2>
+   <p class="kv" id="v-meta"></p>
+   <div class="stack">
+    <button class="btn primary" id="v-print">Print</button>
+    <button class="btn dl" id="v-pdf">Download PDF</button>
+    <button class="btn" id="v-new">+ New voucher</button>
+   </div>
+  </section>
+ </div>
+
+ <div class="stage" id="stage"><div class="paper" id="paper"></div></div>
+</div>
+
+<section class="card logs" id="logsec">
+ <div class="bar">
+  <h2 id="lg-title">Voucher log</h2>
+  <input id="q" type="search" placeholder="Search log…" aria-label="Search log">
+  <button class="btn sm dl" id="x-csv" title="Exports the rows matching the current sort, requester and date filters">Export CSV</button>
+  <button class="btn sm dl" id="x-json">Backup</button>
+  <button class="btn sm" id="x-restore">Restore</button>
+  <input type="file" id="x-file" accept=".json,application/json" class="hidden">
+ </div>
+ <div class="filters">
+  <label>Sort by<select id="o-sort"><option value="pv">PV No. (chronological)</option><option value="date">Date requested</option><option value="requester">Requester</option><option value="amount">Amount</option></select></label>
+  <button class="btn sm" id="o-dir" type="button">Newest first</button>
+  <label>Requester<select id="o-req"><option value="">All requesters</option></select></label>
+  <label>From<input type="date" id="o-from"></label>
+  <label>To<input type="date" id="o-to"></label>
+  <button class="btn sm" id="o-clear" type="button">Clear filters</button>
+ </div>
+ <div class="tw"><table class="lg"><thead><tr><th class="sort" data-s="pv" data-l="PV No.">PV No.</th><th class="sort" data-s="date" data-l="Date">Date</th><th class="sort" data-s="requester" data-l="Requested by">Requested by</th><th>Purpose</th><th class="num sort" data-s="amount" data-l="Amount">Amount</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+ <details><summary>Numbering settings</summary>
+  <div class="set">
+   <label>Last PV No. used<input type="text" id="s-seed" placeholder="e.g. 10-2026-020"></label>
+   <label class="chk"><input type="checkbox" id="s-reset" checked> Restart count each month</label>
+   <button class="btn sm" id="s-save">Save</button>
+  </div>
+  <p class="hint" style="margin-top:8px">Only used until the first voucher is logged &mdash; after that the next number follows the latest voucher in the log.</p>
+ </details>
+</section>
+</div>
+<div id="login" class="hidden"><form class="card" id="login-form"><h2>Sign in</h2>
+ <label>Username<input id="l-user" autocomplete="username" required></label>
+ <label>Password<input type="password" id="l-pass" autocomplete="current-password" required></label>
+ <button class="btn primary" id="l-btn">Sign in</button><div id="login-err"></div></form></div>
+<div id="msg" class="hidden" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

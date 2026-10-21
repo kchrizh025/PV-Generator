@@ -48,7 +48,7 @@ app.get('/api/me', auth, (req, res) => res.json({ ok: true }));
 
 /* ---------- data helpers ---------- */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const toApi = r => ({ id: r.id, pv: r.pv_no, date: r.voucher_date, cents: Number(r.amount_cents), words: r.amount_words, purpose: r.purpose || '', requester: r.requester || '', createdAt: r.created_at });
+const toApi = r => ({ id: r.id, pv: r.pv_no, date: r.voucher_date, cents: Number(r.amount_cents), words: r.amount_words, purpose: r.purpose || '', requester: r.requester || '', category: r.category || '', createdAt: r.created_at });
 const ah = fn => (req, res) => fn(req, res).catch(e => { console.error(e); res.status(500).json({ error: 'Database error. Check the server logs.' }); });
 
 async function getSettings() {
@@ -123,6 +123,7 @@ app.post('/api/vouchers', auth, ah(async (req, res) => {
   const cents = L.parseCents(b.amount);
   const date = b.date ? String(b.date) : L.today(TZ);
   const manual = String(b.pv || '').trim().slice(0, 40);
+  const category = String(b.category || '').trim().slice(0, 80) || 'Uncategorized';
   if (!purpose || !requester) return res.status(400).json({ error: 'Purpose and requester are required.' });
   if (!Number.isFinite(cents)) return res.status(400).json({ error: 'Enter a valid amount greater than zero.' });
   if (!isDay(date)) return res.status(400).json({ error: 'Invalid date.' });
@@ -131,7 +132,7 @@ app.post('/api/vouchers', auth, ah(async (req, res) => {
   for (let i = 0; i < 6; i++) { // retry if two requests grab the same number
     const pv = manual || await nextNumber(date, s);
     const { data, error } = await db.from('vouchers')
-      .insert({ pv_no: pv, voucher_date: date, amount_cents: cents, amount_words: L.amtWords(cents), purpose, requester })
+      .insert({ pv_no: pv, voucher_date: date, amount_cents: cents, amount_words: L.amtWords(cents), purpose, requester, category })
       .select().single();
     if (!error) return res.status(201).json(toApi(data));
     if (error.code === '23505') {
@@ -162,8 +163,8 @@ app.put('/api/settings', auth, ah(async (req, res) => {
 const day = () => L.today(TZ);
 app.get('/api/export.csv', auth, ah(async (req, res) => {
   const q = v => { v = String(v == null ? '' : v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return '"' + v.replace(/"/g, '""') + '"'; };
-  const rows = [['PV No.', 'Date', 'Requested by', 'Purpose', 'Amount', 'Amount in Words', 'Generated at']]
-    .concat((await allVouchers(req.query)).map(v => [v.pv, v.date, v.requester, v.purpose, (v.cents / 100).toFixed(2), v.words, v.createdAt]));
+  const rows = [['PV No.', 'Date', 'Requested by', 'Category', 'Purpose', 'Amount', 'Amount in Words', 'Generated at']]
+    .concat((await allVouchers(req.query)).map(v => [v.pv, v.date, v.requester, v.category, v.purpose, (v.cents / 100).toFixed(2), v.words, v.createdAt]));
   res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="PV-log-' + day() + '.csv"' });
   res.send('\ufeff' + rows.map(r => r.map(q).join(',')).join('\r\n'));
 }));
@@ -181,7 +182,7 @@ app.post('/api/import', auth, ah(async (req, res) => {
     const date = String((r && r.date) || '');
     if (!pv || !Number.isInteger(cents) || cents <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || have.has(key(pv))) { skipped++; continue; }
     have.add(key(pv));
-    const row = { pv_no: pv, voucher_date: date, amount_cents: cents, amount_words: L.amtWords(cents), purpose: String(r.purpose || '').slice(0, 1000) || '-', requester: String(r.requester || '').slice(0, 200) || '-' };
+    const row = { pv_no: pv, voucher_date: date, amount_cents: cents, amount_words: L.amtWords(cents), purpose: String(r.purpose || '').slice(0, 1000) || '-', requester: String(r.requester || '').slice(0, 200) || '-', category: String(r.category || '').trim().slice(0, 80) || 'Uncategorized' };
     if (r.createdAt && !isNaN(Date.parse(r.createdAt))) row.created_at = new Date(r.createdAt).toISOString();
     rows.push(row);
   }

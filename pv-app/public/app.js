@@ -1,6 +1,7 @@
 (function(){
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+window.PV={get logs(){return logs}};
 let logs=[],st={seed:'',reset:true},dlCap=true,ready=false,current=null,pvDirty=false,booting=false,view=[];
 
 /* ---------- amount helpers ---------- */
@@ -39,7 +40,7 @@ try{const o=JSON.parse(localStorage.getItem('pv_ord')||'null');if(o&&DIR0[o.sort
 const ordQS=()=>{const p=new URLSearchParams({sort:ord.sort,dir:ord.dir});if(ord.req)p.set('requester',ord.req);if(ord.from)p.set('from',ord.from);if(ord.to)p.set('to',ord.to);return p.toString()};
 let viewSeq=0;
 async function loadView(){const n=++viewSeq;const v=await api('/vouchers?'+ordQS());if(n===viewSeq){view=v;renderLogs()}}
-async function reload(){await loadAll();reqOpts();await loadView()}
+async function reload(){await loadAll();reqOpts();await loadView();window.dispatchEvent(new Event('pv:data'))}
 function syncCtl(){
  $('#o-sort').value=ord.sort;$('#o-dir').textContent=LBL[ord.sort][ord.dir==='asc'?0:1]+(ord.dir==='asc'?' \u2191':' \u2193');
  $('#o-req').value=ord.req;$('#o-from').value=ord.from;$('#o-to').value=ord.to;
@@ -96,13 +97,13 @@ function refresh(){
  $('#gen').disabled=!(ready&&v.pv&&v.date&&Number.isFinite(v.cents)&&v.purpose&&v.requester&&!dup);
  $('#gen-hint').textContent=!ready?'Loading your log\u2026':dup?'PV No. '+v.pv+' is already in the log.':(amtTxt&&!Number.isFinite(v.cents)?'Enter an amount greater than zero.':'');
  if(!current)paint(v)}
-function reqList(){$('#reqs').innerHTML=[...new Set(logs.map(l=>l.requester))].sort().map(r=>'<option value="'+esc(r)+'">').join('')}
+function reqList(){$('#cats').innerHTML=[...new Set(logs.map(l=>l.category).filter(Boolean))].sort().map(r=>'<option value="'+esc(r)+'">').join('');$('#reqs').innerHTML=[...new Set(logs.map(l=>l.requester))].sort().map(r=>'<option value="'+esc(r)+'">').join('')}
 function renderLogs(){
  const q=$('#q').value.trim().toLowerCase();
- const list=view.filter(l=>!q||[l.pv,l.requester,l.purpose,l.date,fmtDate(l.date),fmtAmt(l.cents)].join(' ').toLowerCase().includes(q));
+ const list=view.filter(l=>!q||[l.pv,l.requester,l.category,l.purpose,l.date,fmtDate(l.date),fmtAmt(l.cents)].join(' ').toLowerCase().includes(q));
  const total=list.reduce((a,l)=>a+l.cents,0),filt=q||ord.req||ord.from||ord.to;
  $('#lg-title').textContent='Voucher log ('+(filt?list.length+' of '+logs.length:logs.length)+(list.length?' \u00b7 \u20b1'+fmtFull(total):'')+')';
- $('#rows').innerHTML=list.length?list.map(l=>`<tr class="${current&&current.id===l.id?'cur':''}"><td><b>${esc(l.pv)}</b></td><td>${fmtDate(l.date)}</td><td>${esc(l.requester)}</td><td class="pur">${esc(l.purpose)}</td><td class="num">${fmtFull(l.cents)}</td><td class="act"><button class="btn sm" data-a="view" data-id="${l.id}">Open</button> <button class="btn sm" data-a="print" data-id="${l.id}">Print</button> <button class="btn sm dl ${dlCap?'':'hidden'}" data-a="pdf" data-id="${l.id}">PDF</button> <button class="btn sm danger" data-a="del" data-id="${l.id}">Delete</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty">'+(logs.length?'No vouchers match these filters.':'No vouchers yet. Generated forms will be listed here.')+'</td></tr>';
+ $('#rows').innerHTML=list.length?list.map(l=>`<tr class="${current&&current.id===l.id?'cur':''}"><td><b>${esc(l.pv)}</b></td><td>${fmtDate(l.date)}</td><td>${esc(l.requester)}</td><td>${esc(l.category||'Uncategorized')}</td><td class="pur">${esc(l.purpose)}</td><td class="num">${fmtFull(l.cents)}</td><td class="act"><button class="btn sm" data-a="view" data-id="${l.id}">Open</button> <button class="btn sm" data-a="print" data-id="${l.id}">Print</button> <button class="btn sm dl ${dlCap?'':'hidden'}" data-a="pdf" data-id="${l.id}">PDF</button> <button class="btn sm danger" data-a="del" data-id="${l.id}">Delete</button></td></tr>`).join(''):'<tr><td colspan="7" class="empty">'+(logs.length?'No vouchers match these filters.':'No vouchers yet. Generated forms will be listed here.')+'</td></tr>';
  reqList()}
 function openRec(id){
  const r=logs.find(l=>l.id===id);if(!r)return;current=r;
@@ -112,14 +113,14 @@ function openRec(id){
  paint(r);renderLogs();window.scrollTo({top:0,behavior:'smooth'})}
 function newVoucher(){
  current=null;pvDirty=false;
- ['#f-amt','#f-purpose','#f-req'].forEach(s=>$(s).value='');
+ ['#f-amt','#f-purpose','#f-req','#f-cat'].forEach(s=>$(s).value='');
  $('#view').classList.add('hidden');$('#draft').classList.remove('hidden');
  defaults();refresh();renderLogs()}
 
 async function generate(){
  const v=draftVal();if($('#gen').disabled)return;$('#gen').disabled=true;
  let rec;
- try{rec=await api('/vouchers',{method:'POST',body:{pv:pvDirty?v.pv:'',date:v.date,amount:(v.cents/100).toFixed(2),purpose:v.purpose,requester:v.requester}})}
+ try{rec=await api('/vouchers',{method:'POST',body:{pv:pvDirty?v.pv:'',date:v.date,amount:(v.cents/100).toFixed(2),purpose:v.purpose,requester:v.requester,category:$('#f-cat').value.trim()}})}
  catch(e){if(e.status===409){try{await loadAll()}catch(x){}pvDirty=false;defaults()}refresh();return flash(e.message)}
  try{await reload()}catch(e){logs.push(rec)}openRec(rec.id)}
 

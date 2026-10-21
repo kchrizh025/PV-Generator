@@ -40,3 +40,7 @@ alter table public.vouchers
 create unique index if not exists vouchers_pv_numeric_uniq on public.vouchers (pv_year, pv_month, pv_seq) where pv_year is not null;
 create index if not exists vouchers_voucher_date_idx on public.vouchers (voucher_date);
 create index if not exists vouchers_requester_norm_idx on public.vouchers (requester_norm);
+
+-- ---- Migration 003 (expense category for Reports) ----
+alter table public.vouchers add column if not exists category text not null default 'Uncategorized';
+create index if not exists vouchers_category_idx on public.vouchers (category);
