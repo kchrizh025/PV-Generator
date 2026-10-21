@@ -80,3 +80,13 @@ To roll back, `git revert` the commit; the extra database columns do no harm to 
 ### Not changed
 Deleting a voucher still removes it, so its number can be reused if it was the highest in its month.
 A "void" status that keeps the number would avoid that; it is not part of PV2.
+
+## Settings & Reports (added)
+- Side gear button: dark/light, theme color (light mode), fonts, text size, left/right/hide, background pattern or photo.
+- Reports tab: Monthly, Per category, Highest expenses ranked (monthly); export CSV or print.
+- Run `migrations/003_category.sql` once in Supabase to add the Category column.
+
+## Phase 2
+- Click a category chip in the log to rename it; tick rows for bulk category changes.
+- Preview toolbar: zoom, Letter/A4, print, PDF, hide form. Drafts and the last-used category are remembered in the browser.
+- Settings: Theme / Text / Layout / Background tabs, System theme, Compact density.

@@ -22,6 +22,8 @@ module.exports = function makeFake() {
       insert(p) { s.op = 'insert'; s.pay = p; return q; },
       upsert(p) { s.op = 'upsert'; s.pay = p; return q; },
       delete() { s.op = 'delete'; return q; },
+      update(p) { s.op = 'update'; s.pay = p; return q; },
+      in(c, vs) { s.f.push(r => vs.includes(r[c])); return q; },
       eq(c, v) { s.f.push(r => r[c] === v); return q; },
       gte(c, v) { s.f.push(r => r[c] >= v); return q; },
       lte(c, v) { s.f.push(r => r[c] <= v); return q; },
@@ -49,6 +51,7 @@ module.exports = function makeFake() {
         return s.ret ? { data: s.one ? out[0] : out, error: null } : { data: null, error: null };
       }
       if (s.op === 'upsert') { const i = t.findIndex(r => r.id === s.pay.id); if (i >= 0) t[i] = s.pay; else t.push(s.pay); return { data: null, error: null }; }
+      if (s.op === 'update') { t.filter(match).forEach(r => Object.assign(r, s.pay)); return { data: null, error: null }; }
       if (s.op === 'delete') { T[name] = t.filter(r => !match(r)); return { data: null, error: null }; }
       let rows = t.filter(match);
       rows.sort((a, b) => { for (const [c, asc] of s.ord) { const d = cmp(a[c], b[c], asc); if (d) return d; } return 0; });

@@ -10,12 +10,14 @@
 </head>
 <body>
 <div class="wrap">
-<header><button class="btn sm hidden" id="logout">Sign out</button><h1>Payment Voucher Generator</h1><p>Requests to HO &middot; enter the details, the rest fills itself in</p></header>
+<header><div class="ht"><h1>Payment Voucher Generator</h1><p>Requests to HO &middot; enter the details, the rest fills itself in</p></div><div class="hb"><button class="btn sm" id="open-set" type="button">&#9881; Settings</button><button class="btn sm hidden" id="logout">Sign out</button></div></header>
 
-<div class="grid">
- <div>
+<nav class="tabs" id="tabs"><button class="tab on" data-t="vouchers" type="button">Vouchers</button><button class="tab" data-t="reports" type="button">Reports</button></nav>
+
+<div class="grid vtab" id="grid">
+ <div id="leftcol">
   <section class="card" id="draft">
-   <h2>New voucher</h2>
+   <h2>New voucher <span class="draftchip hidden" id="draft-chip">Draft restored &middot; <a href="#" id="draft-x">discard</a></span></h2>
    <label>PV No.<input id="f-pv" autocomplete="off"></label>
    <div class="hint" id="pv-hint"></div>
    <div class="row2">
@@ -24,6 +26,8 @@
    </div>
    <div class="words"><span>Amount in words</span><strong id="f-words">&mdash;</strong></div>
    <label>Purpose<textarea id="f-purpose" rows="3" placeholder="What is the money for?"></textarea></label>
+   <label>Category<input id="f-cat" list="cats" placeholder="e.g. Supplies, Utilities, Salaries" autocomplete="off"></label>
+   <datalist id="cats"></datalist>
    <label>Requested by<input id="f-req" list="reqs" autocomplete="off"></label>
    <datalist id="reqs"></datalist>
    <button class="btn primary" id="gen" disabled>Generate voucher</button>
@@ -42,10 +46,20 @@
   </section>
  </div>
 
- <div class="stage" id="stage"><div class="paper" id="paper"></div></div>
+ <div class="stage" id="stage">
+  <div class="tb glass" id="tb">
+   <button class="tbb" id="t-form" type="button" title="Hide / show form">&#9776;</button><span class="sep"></span>
+   <button class="tbb" id="z-out" type="button" title="Zoom out">&minus;</button>
+   <button class="tbb zl" id="z-fit" type="button" title="Fit to width">Fit</button>
+   <button class="tbb" id="z-in" type="button" title="Zoom in">+</button><span class="sep"></span>
+   <select id="t-paper" title="Paper size"><option value="letter">Letter</option><option value="a4">A4</option></select><span class="sep"></span>
+   <button class="tbb" id="t-print" type="button" title="Print">&#128424;</button>
+   <button class="tbb" id="t-pdf" type="button" title="Download PDF">&#11015;</button>
+  </div>
+  <div class="paper" id="paper"></div></div>
 </div>
 
-<section class="card logs" id="logsec">
+<section class="card logs vtab" id="logsec">
  <div class="bar">
   <h2 id="lg-title">Voucher log</h2>
   <input id="q" type="search" placeholder="Search log…" aria-label="Search log">
@@ -62,7 +76,8 @@
   <label>To<input type="date" id="o-to"></label>
   <button class="btn sm" id="o-clear" type="button">Clear filters</button>
  </div>
- <div class="tw"><table class="lg"><thead><tr><th class="sort" data-s="pv" data-l="PV No.">PV No.</th><th class="sort" data-s="date" data-l="Date">Date</th><th class="sort" data-s="requester" data-l="Requested by">Requested by</th><th>Purpose</th><th class="num sort" data-s="amount" data-l="Amount">Amount</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+ <div class="bar bulk hidden" id="bulk"><b id="bulk-n"></b><input id="bulk-cat" list="cats" placeholder="Set category for selected…"><button class="btn sm" id="bulk-go" type="button">Apply</button><button class="btn sm" id="bulk-x" type="button">Clear</button></div>
+ <div class="tw"><table class="lg"><thead><tr><th><input type="checkbox" id="sel-all" aria-label="Select all"></th><th class="sort" data-s="pv" data-l="PV No.">PV No.</th><th class="sort" data-s="date" data-l="Date">Date</th><th class="sort" data-s="requester" data-l="Requested by">Requested by</th><th>Category</th><th>Purpose</th><th class="num sort" data-s="amount" data-l="Amount">Amount</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
  <details><summary>Numbering settings</summary>
   <div class="set">
    <label>Last PV No. used<input type="text" id="s-seed" placeholder="e.g. 10-2026-020"></label>
@@ -73,6 +88,47 @@
  </details>
 </section>
 </div>
+<section class="wrap hidden" id="reports">
+ <div class="card">
+  <div class="bar"><h2 id="r-title">Reports</h2>
+   <button class="btn sm dl" id="r-csv" type="button">Download CSV</button><button class="btn sm" id="r-print" type="button">Print</button></div>
+  <div class="filters">
+   <label>Report<select id="r-type"><option value="monthly">Expenses &middot; Monthly</option><option value="category">Expenses &middot; Per category</option><option value="ranked">Highest expenses &middot; Ranked (monthly)</option></select></label>
+   <label id="r-yl">Year<select id="r-year"></select></label>
+   <label id="r-ml">Month<select id="r-month"></select></label>
+  </div>
+  <div id="r-sum" class="kv"></div>
+  <div class="tw" id="r-out"></div>
+ </div>
+</section>
+<aside id="setbtn" aria-label="Settings"><button id="set-tab" type="button" title="Settings">&#9881;</button></aside>
+<aside id="setpanel" class="hidden glass" role="dialog" aria-label="Settings">
+ <div class="sp-h"><h2>Settings</h2><button class="btn sm" id="set-x" type="button">Close</button></div>
+ <div class="ptabs" id="ptabs"><button class="on" data-p="theme" type="button">Theme</button><button data-p="text" type="button">Text</button><button data-p="layout" type="button">Layout</button><button data-p="bg" type="button">Background</button></div>
+ <div class="sp-b">
+  <div class="pane" data-p="theme">
+   <div class="sg"><h3>Appearance</h3><div class="seg" id="u-mode"><button data-v="light" type="button">Light</button><button data-v="dark" type="button">Dark</button><button data-v="system" type="button">System</button></div></div>
+   <div class="sg" id="u-colorg"><h3>Theme color (light mode)</h3><div class="sw" id="u-color"></div></div>
+  </div>
+  <div class="pane hidden" data-p="text">
+   <div class="sg"><h3>Font</h3>
+    <label>Font style<select id="u-font"><option value="system">System</option><option value="serif">Serif</option><option value="mono">Monospace</option><option value="rounded">Rounded</option><option value="classic">Classic (Palatino)</option></select></label>
+    <label>Text size<select id="u-size"><option value="0.9">Small</option><option value="1">Medium</option><option value="1.12">Large</option><option value="1.25">Extra large</option></select></label></div>
+  </div>
+  <div class="pane hidden" data-p="layout">
+   <div class="sg"><h3>Settings button</h3><div class="seg" id="u-side"><button data-v="left" type="button">Left</button><button data-v="right" type="button">Right</button><button data-v="hide" type="button">Hide</button></div>
+    <p class="hint">When hidden, open Settings from the header.</p></div>
+   <div class="sg"><h3>Density</h3><div class="seg" id="u-dens"><button data-v="comfy" type="button">Comfortable</button><button data-v="compact" type="button">Compact</button></div></div>
+  </div>
+  <div class="pane hidden" data-p="bg">
+   <div class="sg"><h3>Background</h3>
+    <label>Pattern<select id="u-pat"><option value="none">Plain</option><option value="dots">Dots</option><option value="grid">Grid</option><option value="lines">Lines</option><option value="diag">Diagonal</option></select></label>
+    <button class="btn sm" id="u-photo" type="button">Upload photo</button> <button class="btn sm danger" id="u-nophoto" type="button">Remove photo</button>
+    <input type="file" id="u-file" accept="image/*" class="hidden"></div>
+  </div>
+  <button class="btn sm" id="u-reset" type="button">Reset to defaults</button>
+ </div>
+</aside>
 <div id="login" class="hidden"><form class="card" id="login-form"><h2>Sign in</h2>
  <label>Username<input id="l-user" autocomplete="username" required></label>
  <label>Password<input type="password" id="l-pass" autocomplete="current-password" required></label>
@@ -80,5 +136,7 @@
 <div id="msg" class="hidden" role="status" aria-live="polite"></div>
 
 <script src="app.js"></script>
+<script src="reports.js"></script>
+<script src="settings.js"></script>
 </body>
 </html>

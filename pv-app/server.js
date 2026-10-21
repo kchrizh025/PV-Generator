@@ -48,7 +48,7 @@ app.get('/api/me', auth, (req, res) => res.json({ ok: true }));
 
 /* ---------- data helpers ---------- */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const toApi = r => ({ id: r.id, pv: r.pv_no, date: r.voucher_date, cents: Number(r.amount_cents), words: r.amount_words, purpose: r.purpose || '', requester: r.requester || '', createdAt: r.created_at });
+const toApi = r => ({ id: r.id, pv: r.pv_no, date: r.voucher_date, cents: Number(r.amount_cents), words: r.amount_words, purpose: r.purpose || '', requester: r.requester || '', category: r.category || '', createdAt: r.created_at });
 const ah = fn => (req, res) => fn(req, res).catch(e => { console.error(e); res.status(500).json({ error: 'Database error. Check the server logs.' }); });
 
 async function getSettings() {
@@ -108,6 +108,14 @@ async function allVouchers(params) { // Supabase returns max 1000 rows per reque
   return out.map(toApi);
 }
 
+const cleanCat = v => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+async function catMap() { // lowercase -> first-used spelling
+  const m = new Map();
+  for (const v of await allVouchers()) { const c = cleanCat(v.category); if (c && !m.has(c.toLowerCase())) m.set(c.toLowerCase(), c); }
+  return m;
+}
+const canon = (m, v) => { const c = cleanCat(v) || 'Uncategorized'; return m.get(c.toLowerCase()) || c; };
+
 /* ---------- API ---------- */
 app.get('/api/vouchers', auth, ah(async (req, res) => res.json(await allVouchers(req.query))));
 
@@ -123,6 +131,7 @@ app.post('/api/vouchers', auth, ah(async (req, res) => {
   const cents = L.parseCents(b.amount);
   const date = b.date ? String(b.date) : L.today(TZ);
   const manual = String(b.pv || '').trim().slice(0, 40);
+  const category = canon(await catMap(), b.category);
   if (!purpose || !requester) return res.status(400).json({ error: 'Purpose and requester are required.' });
   if (!Number.isFinite(cents)) return res.status(400).json({ error: 'Enter a valid amount greater than zero.' });
   if (!isDay(date)) return res.status(400).json({ error: 'Invalid date.' });
@@ -131,7 +140,7 @@ app.post('/api/vouchers', auth, ah(async (req, res) => {
   for (let i = 0; i < 6; i++) { // retry if two requests grab the same number
     const pv = manual || await nextNumber(date, s);
     const { data, error } = await db.from('vouchers')
-      .insert({ pv_no: pv, voucher_date: date, amount_cents: cents, amount_words: L.amtWords(cents), purpose, requester })
+      .insert({ pv_no: pv, voucher_date: date, amount_cents: cents, amount_words: L.amtWords(cents), purpose, requester, category })
       .select().single();
     if (!error) return res.status(201).json(toApi(data));
     if (error.code === '23505') {
@@ -143,6 +152,22 @@ app.post('/api/vouchers', auth, ah(async (req, res) => {
   res.status(409).json({ error: 'Could not assign a PV number. Please try again.' });
 }));
 
+app.patch('/api/vouchers/:id', auth, ah(async (req, res) => {
+  if (!UUID.test(req.params.id)) return res.status(400).json({ error: 'Bad id.' });
+  if (!cleanCat((req.body || {}).category)) return res.status(400).json({ error: 'Enter a category.' });
+  const category = canon(await catMap(), req.body.category);
+  const { error } = await db.from('vouchers').update({ category }).eq('id', req.params.id);
+  if (error) throw error;
+  res.json({ ok: true, category });
+}));
+app.post('/api/vouchers-category', auth, ah(async (req, res) => {
+  const ids = Array.isArray((req.body || {}).ids) ? req.body.ids.filter(i => UUID.test(i)).slice(0, 500) : [];
+  if (!ids.length || !cleanCat(req.body.category)) return res.status(400).json({ error: 'Select vouchers and enter a category.' });
+  const category = canon(await catMap(), req.body.category);
+  const { error } = await db.from('vouchers').update({ category }).in('id', ids);
+  if (error) throw error;
+  res.json({ ok: true, category, updated: ids.length });
+}));
 app.delete('/api/vouchers/:id', auth, ah(async (req, res) => {
   if (!UUID.test(req.params.id)) return res.status(400).json({ error: 'Bad id.' });
   const { error } = await db.from('vouchers').delete().eq('id', req.params.id);
@@ -162,8 +187,8 @@ app.put('/api/settings', auth, ah(async (req, res) => {
 const day = () => L.today(TZ);
 app.get('/api/export.csv', auth, ah(async (req, res) => {
   const q = v => { v = String(v == null ? '' : v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return '"' + v.replace(/"/g, '""') + '"'; };
-  const rows = [['PV No.', 'Date', 'Requested by', 'Purpose', 'Amount', 'Amount in Words', 'Generated at']]
-    .concat((await allVouchers(req.query)).map(v => [v.pv, v.date, v.requester, v.purpose, (v.cents / 100).toFixed(2), v.words, v.createdAt]));
+  const rows = [['PV No.', 'Date', 'Requested by', 'Category', 'Purpose', 'Amount', 'Amount in Words', 'Generated at']]
+    .concat((await allVouchers(req.query)).map(v => [v.pv, v.date, v.requester, v.category, v.purpose, (v.cents / 100).toFixed(2), v.words, v.createdAt]));
   res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="PV-log-' + day() + '.csv"' });
   res.send('\ufeff' + rows.map(r => r.map(q).join(',')).join('\r\n'));
 }));
@@ -174,6 +199,7 @@ app.get('/api/backup.json', auth, ah(async (req, res) => {
 app.post('/api/import', auth, ah(async (req, res) => {
   const input = Array.isArray((req.body || {}).logs) ? req.body.logs : [];
   const key = pv => { const p = L.parsePV(pv); return p ? p.year + '-' + p.month + '-' + p.seq : pv.toLowerCase(); };
+  const cm = await catMap();
   const have = new Set((await allVouchers()).map(v => key(v.pv)));
   const rows = []; let skipped = 0;
   for (const r of input) {
@@ -181,7 +207,8 @@ app.post('/api/import', auth, ah(async (req, res) => {
     const date = String((r && r.date) || '');
     if (!pv || !Number.isInteger(cents) || cents <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || have.has(key(pv))) { skipped++; continue; }
     have.add(key(pv));
-    const row = { pv_no: pv, voucher_date: date, amount_cents: cents, amount_words: L.amtWords(cents), purpose: String(r.purpose || '').slice(0, 1000) || '-', requester: String(r.requester || '').slice(0, 200) || '-' };
+    const row = { pv_no: pv, voucher_date: date, amount_cents: cents, amount_words: L.amtWords(cents), purpose: String(r.purpose || '').slice(0, 1000) || '-', requester: String(r.requester || '').slice(0, 200) || '-', category: canon(cm, r.category) };
+    if (!cm.has(row.category.toLowerCase())) cm.set(row.category.toLowerCase(), row.category);
     if (r.createdAt && !isNaN(Date.parse(r.createdAt))) row.created_at = new Date(r.createdAt).toISOString();
     rows.push(row);
   }

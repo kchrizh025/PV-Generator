@@ -75,3 +75,17 @@ test('CSV export follows the filter; import skips already-filed numbers', async 
   const imp = await call('POST', '/api/import', { logs: [{ pv: '10-2026-21', cents: 500, date: '2026-10-16', purpose: 'x', requester: 'y' }, { pv: '11-2026-001', cents: 500, date: '2026-11-02', purpose: 'x', requester: 'y' }] });
   assert.deepEqual(imp.b, { imported: 1, skipped: 1 });
 });
+
+test('categories: case-insensitive reuse, edit one, bulk edit', async () => {
+  const a = (await make({ category: 'Supplies' })).b, b = (await make({ category: '  supplies ' })).b, c = (await make({})).b;
+  assert.equal(a.category, 'Supplies'); assert.equal(b.category, 'Supplies'); assert.equal(c.category, 'Uncategorized');
+  const p = await call('PATCH', '/api/vouchers/' + c.id, { category: 'SUPPLIES' });
+  assert.equal(p.b.category, 'Supplies');
+  assert.equal((await call('PATCH', '/api/vouchers/' + c.id, { category: ' ' })).s, 400);
+  const d = (await make({})).b, e = (await make({})).b;
+  const bulk = await call('POST', '/api/vouchers-category', { ids: [d.id, e.id], category: 'Utilities' });
+  assert.equal(bulk.b.updated, 2);
+  const all = (await call('GET', '/api/vouchers')).b;
+  assert.equal(all.filter(v => v.category === 'Utilities').length, 2);
+  assert.equal((await call('POST', '/api/vouchers-category', { ids: [], category: 'x' })).s, 400);
+});

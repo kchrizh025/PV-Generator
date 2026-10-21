@@ -1,6 +1,9 @@
 (function(){
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+window.PV={get logs(){return logs}};
+window.PVUI={zoom:0,paper:'letter',refit:null};
+const ls=(k,v)=>{try{if(v===undefined)return localStorage.getItem(k)||'';if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v)}catch(e){return ''}};
 let logs=[],st={seed:'',reset:true},dlCap=true,ready=false,current=null,pvDirty=false,booting=false,view=[];
 
 /* ---------- amount helpers ---------- */
@@ -39,7 +42,7 @@ try{const o=JSON.parse(localStorage.getItem('pv_ord')||'null');if(o&&DIR0[o.sort
 const ordQS=()=>{const p=new URLSearchParams({sort:ord.sort,dir:ord.dir});if(ord.req)p.set('requester',ord.req);if(ord.from)p.set('from',ord.from);if(ord.to)p.set('to',ord.to);return p.toString()};
 let viewSeq=0;
 async function loadView(){const n=++viewSeq;const v=await api('/vouchers?'+ordQS());if(n===viewSeq){view=v;renderLogs()}}
-async function reload(){await loadAll();reqOpts();await loadView()}
+async function reload(){await loadAll();reqOpts();await loadView();window.dispatchEvent(new Event('pv:data'))}
 function syncCtl(){
  $('#o-sort').value=ord.sort;$('#o-dir').textContent=LBL[ord.sort][ord.dir==='asc'?0:1]+(ord.dir==='asc'?' \u2191':' \u2193');
  $('#o-req').value=ord.req;$('#o-from').value=ord.from;$('#o-to').value=ord.to;
@@ -69,7 +72,8 @@ function sheet(v){
  return copy(false)+'<div class="cut"></div><div class="cutl">&#9986; CUT HERE</div>'+copy(true)}
 
 function paint(v){$('#paper').innerHTML=sheet(v);fit()}
-function fit(){$('#paper').style.zoom=Math.min(1,$('#stage').clientWidth/816)}
+function fit(){const w=PVUI.paper==='a4'?794:816,z=PVUI.zoom;$('#paper').style.zoom=z||Math.min(1,($('#stage').clientWidth-24)/w)}
+PVUI.refit=fit;
 
 /* ---------- API (talks to the Node backend) ---------- */
 async function api(path,opt){
@@ -85,6 +89,7 @@ async function loadAll(){logs=await api('/vouchers?sort=pv&dir=asc');const s=awa
 /* ---------- UI ---------- */
 let mt;function flash(t){const m=$('#msg');m.textContent=t;m.classList.remove('hidden');clearTimeout(mt);mt=setTimeout(()=>m.classList.add('hidden'),3500)}
 function defaults(){
+ if(!$('#f-cat').value)$('#f-cat').value=ls('pv_lastcat');
  $('#f-date').value=today();
  if(!pvDirty)$('#f-pv').value=nextPV($('#f-date').value);
  $('#pv-hint').textContent=st.reset?'Numbered by the month of the date requested.':'Numbering continues across months.'}
@@ -96,13 +101,13 @@ function refresh(){
  $('#gen').disabled=!(ready&&v.pv&&v.date&&Number.isFinite(v.cents)&&v.purpose&&v.requester&&!dup);
  $('#gen-hint').textContent=!ready?'Loading your log\u2026':dup?'PV No. '+v.pv+' is already in the log.':(amtTxt&&!Number.isFinite(v.cents)?'Enter an amount greater than zero.':'');
  if(!current)paint(v)}
-function reqList(){$('#reqs').innerHTML=[...new Set(logs.map(l=>l.requester))].sort().map(r=>'<option value="'+esc(r)+'">').join('')}
+function reqList(){$('#cats').innerHTML=[...new Set(logs.map(l=>l.category).filter(Boolean))].sort().map(r=>'<option value="'+esc(r)+'">').join('');$('#reqs').innerHTML=[...new Set(logs.map(l=>l.requester))].sort().map(r=>'<option value="'+esc(r)+'">').join('')}
 function renderLogs(){
  const q=$('#q').value.trim().toLowerCase();
- const list=view.filter(l=>!q||[l.pv,l.requester,l.purpose,l.date,fmtDate(l.date),fmtAmt(l.cents)].join(' ').toLowerCase().includes(q));
+ const list=view.filter(l=>!q||[l.pv,l.requester,l.category,l.purpose,l.date,fmtDate(l.date),fmtAmt(l.cents)].join(' ').toLowerCase().includes(q));
  const total=list.reduce((a,l)=>a+l.cents,0),filt=q||ord.req||ord.from||ord.to;
  $('#lg-title').textContent='Voucher log ('+(filt?list.length+' of '+logs.length:logs.length)+(list.length?' \u00b7 \u20b1'+fmtFull(total):'')+')';
- $('#rows').innerHTML=list.length?list.map(l=>`<tr class="${current&&current.id===l.id?'cur':''}"><td><b>${esc(l.pv)}</b></td><td>${fmtDate(l.date)}</td><td>${esc(l.requester)}</td><td class="pur">${esc(l.purpose)}</td><td class="num">${fmtFull(l.cents)}</td><td class="act"><button class="btn sm" data-a="view" data-id="${l.id}">Open</button> <button class="btn sm" data-a="print" data-id="${l.id}">Print</button> <button class="btn sm dl ${dlCap?'':'hidden'}" data-a="pdf" data-id="${l.id}">PDF</button> <button class="btn sm danger" data-a="del" data-id="${l.id}">Delete</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty">'+(logs.length?'No vouchers match these filters.':'No vouchers yet. Generated forms will be listed here.')+'</td></tr>';
+ $('#rows').innerHTML=list.length?list.map(l=>`<tr class="${current&&current.id===l.id?'cur':''}"><td><input type="checkbox" class="rsel" value="${l.id}" aria-label="Select ${esc(l.pv)}"></td><td><b>${esc(l.pv)}</b></td><td>${fmtDate(l.date)}</td><td>${esc(l.requester)}</td><td><button class="chip" data-a="cat" data-id="${l.id}" title="Click to change category">${esc(l.category||'Uncategorized')}</button></td><td class="pur">${esc(l.purpose)}</td><td class="num">${fmtFull(l.cents)}</td><td class="act"><button class="btn sm" data-a="view" data-id="${l.id}">Open</button> <button class="btn sm" data-a="print" data-id="${l.id}">Print</button> <button class="btn sm dl ${dlCap?'':'hidden'}" data-a="pdf" data-id="${l.id}">PDF</button> <button class="btn sm danger" data-a="del" data-id="${l.id}">Delete</button></td></tr>`).join(''):'<tr><td colspan="8" class="empty">'+(logs.length?'No vouchers match these filters.':'No vouchers yet. Generated forms will be listed here.')+'</td></tr>';
  reqList()}
 function openRec(id){
  const r=logs.find(l=>l.id===id);if(!r)return;current=r;
@@ -111,17 +116,17 @@ function openRec(id){
  $('#v-meta').innerHTML='<b>'+esc(r.requester)+'</b> &middot; &#8369;'+fmtFull(r.cents)+' &middot; '+fmtDate(r.date);
  paint(r);renderLogs();window.scrollTo({top:0,behavior:'smooth'})}
 function newVoucher(){
- current=null;pvDirty=false;
- ['#f-amt','#f-purpose','#f-req'].forEach(s=>$(s).value='');
+ current=null;pvDirty=false;ls('pv_draft',null);$('#draft-chip').classList.add('hidden');
+ ['#f-amt','#f-purpose','#f-req','#f-cat'].forEach(s=>$(s).value='');
  $('#view').classList.add('hidden');$('#draft').classList.remove('hidden');
  defaults();refresh();renderLogs()}
 
 async function generate(){
  const v=draftVal();if($('#gen').disabled)return;$('#gen').disabled=true;
  let rec;
- try{rec=await api('/vouchers',{method:'POST',body:{pv:pvDirty?v.pv:'',date:v.date,amount:(v.cents/100).toFixed(2),purpose:v.purpose,requester:v.requester}})}
+ try{rec=await api('/vouchers',{method:'POST',body:{pv:pvDirty?v.pv:'',date:v.date,amount:(v.cents/100).toFixed(2),purpose:v.purpose,requester:v.requester,category:$('#f-cat').value.trim()}})}
  catch(e){if(e.status===409){try{await loadAll()}catch(x){}pvDirty=false;defaults()}refresh();return flash(e.message)}
- try{await reload()}catch(e){logs.push(rec)}openRec(rec.id)}
+ ls('pv_lastcat',rec.category||v.category||'');ls('pv_draft',null);try{await reload()}catch(e){logs.push(rec)}openRec(rec.id)}
 
 async function save(name,data){
  const type=/\.pdf$/.test(name)?'application/pdf':'application/octet-stream';
@@ -134,9 +139,9 @@ async function pdf(rec){
  host.innerHTML='<div class="paper">'+sheet(rec)+'</div>';document.body.appendChild(host);
  try{
   const cv=await html2canvas(host.firstChild,{scale:2.5,backgroundColor:'#ffffff'});
-  let w=8.5,hh=8.5*cv.height/cv.width;if(hh>11){w=w*11/hh;hh=11}
-  const doc=new jspdf.jsPDF({unit:'in',format:'letter',compress:true});
-  doc.addImage(cv.toDataURL('image/jpeg',.93),'JPEG',(8.5-w)/2,0,w,hh);
+  const a4=PVUI.paper==='a4',PW=a4?8.27:8.5,PH=a4?11.69:11;let w=PW,hh=PW*cv.height/cv.width;if(hh>PH){w=w*PH/hh;hh=PH}
+  const doc=new jspdf.jsPDF({unit:'in',format:a4?'a4':'letter',compress:true});
+  doc.addImage(cv.toDataURL('image/jpeg',.93),'JPEG',(PW-w)/2,0,w,hh);
   await save('PV_'+rec.pv+'.pdf',doc.output('arraybuffer'));
  }catch(e){flash('Could not create the PDF.')}finally{host.remove()}}
 function doPrint(){try{window.print()}catch(e){flash('Printing is not available here. Download the PDF instead.')}}
@@ -156,6 +161,16 @@ $('#o-from').addEventListener('change',()=>{ord.from=$('#o-from').value;applyOrd
 $('#o-to').addEventListener('change',()=>{ord.to=$('#o-to').value;applyOrd()});
 $('#o-clear').addEventListener('click',()=>{ord.req='';ord.from='';ord.to='';$('#q').value='';applyOrd()});
 document.querySelector('.lg thead').addEventListener('click',e=>{const t=e.target.closest('th[data-s]');if(!t)return;const k=t.dataset.s;if(ord.sort===k)ord.dir=ord.dir==='asc'?'desc':'asc';else{ord.sort=k;ord.dir=DIR0[k]}applyOrd()});
+function bulkUi(){const n=document.querySelectorAll('.rsel:checked').length;$('#bulk').classList.toggle('hidden',!n);$('#bulk-n').textContent=n+' selected'}
+$('#rows').addEventListener('change',e=>{if(e.target.classList.contains('rsel'))bulkUi()});
+$('#sel-all').addEventListener('change',e=>{document.querySelectorAll('.rsel').forEach(c=>c.checked=e.target.checked);bulkUi()});
+$('#bulk-x').addEventListener('click',()=>{$('#sel-all').checked=false;document.querySelectorAll('.rsel').forEach(c=>c.checked=false);bulkUi()});
+$('#bulk-go').addEventListener('click',async()=>{const ids=[...document.querySelectorAll('.rsel:checked')].map(c=>c.value),category=$('#bulk-cat').value.trim();if(!ids.length||!category)return flash('Select vouchers and type a category.');
+ try{const r=await api('/vouchers-category',{method:'POST',body:{ids,category}});$('#bulk-cat').value='';$('#sel-all').checked=false;await reload();bulkUi();flash(r.updated+' updated to '+r.category)}catch(x){flash(x.message)}});
+$('#rows').addEventListener('click',e=>{const b=e.target.closest('[data-a="cat"]');if(!b)return;const td=b.parentNode,id=b.dataset.id,old=b.textContent;
+ td.innerHTML='<input class="ci" list="cats" value="'+esc(old)+'">';const i=td.firstChild;i.focus();i.select();let done=false;
+ const commit=async ok=>{if(done)return;done=true;const v=i.value.trim();if(ok&&v&&v!==old){try{await api('/vouchers/'+id,{method:'PATCH',body:{category:v}});await reload()}catch(x){flash(x.message);renderLogs()}}else renderLogs()};
+ i.onkeydown=ev=>{if(ev.key==='Enter')commit(true);if(ev.key==='Escape')commit(false)};i.onblur=()=>commit(true)});
 $('#rows').addEventListener('click',async e=>{
  const b=e.target.closest('button');if(!b)return;const id=b.dataset.id,r=logs.find(l=>l.id===id);if(!r)return;
  if(b.dataset.a==='view')openRec(id);
@@ -182,11 +197,18 @@ if(window.ResizeObserver)new ResizeObserver(fit).observe($('#stage'));else addEv
 
 /* ---------- start ---------- */
 defaults();refresh();syncCtl();renderLogs();
+const DF=['#f-amt','#f-purpose','#f-cat','#f-req'];
+function saveDraft(){if(current)return;const d={};DF.forEach(s=>d[s]=$(s).value);ls('pv_draft',d['#f-amt']||d['#f-purpose']||d['#f-req']?JSON.stringify(d):null)}
+function restoreDraft(){try{const d=JSON.parse(ls('pv_draft')||'null');if(!d)return;DF.forEach(s=>{if(d[s])$(s).value=d[s]});$('#draft-chip').classList.remove('hidden');refresh()}catch(e){}}
+DF.forEach(s=>$(s).addEventListener('input',saveDraft));
+$('#draft-x').addEventListener('click',e=>{e.preventDefault();DF.forEach(s=>$(s).value='');ls('pv_draft',null);$('#draft-chip').classList.add('hidden');defaults();refresh()});
+$('#t-print').addEventListener('click',doPrint);
+$('#t-pdf').addEventListener('click',()=>current?pdf(current):flash('Generate the voucher first, then download.'));
 async function boot(){
  if(booting)return;booting=true;$('#login').classList.add('hidden');$('#logout').classList.remove('hidden');
  try{await reload()}catch(e){booting=false;if(e.status!==401)flash('Could not load the log: '+e.message);return}
  $('#s-seed').value=st.seed||'';$('#s-reset').checked=st.reset!==false;
- if(!current){defaults();refresh()}renderLogs()}
+ if(!current){defaults();restoreDraft();refresh()}renderLogs()}
 $('#login-form').addEventListener('submit',async e=>{
  e.preventDefault();$('#login-err').textContent='';$('#l-btn').disabled=true;
  try{await api('/login',{method:'POST',body:{username:$('#l-user').value.trim(),password:$('#l-pass').value}});$('#l-pass').value='';boot()}
